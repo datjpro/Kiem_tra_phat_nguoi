@@ -1,17 +1,23 @@
 from __future__ import annotations
 
-from src.config import Settings
+from typing import TYPE_CHECKING
+
 from src.provider.base import ViolationProvider
-from src.provider.http_provider import HttpViolationProvider
-from src.provider.mock import MockViolationProvider
+
+if TYPE_CHECKING:
+    from src.config import Settings
 
 
 def build_provider(settings: Settings) -> ViolationProvider:
     if settings.provider_mode == "mock":
+        from src.provider.mock import MockViolationProvider
+
         return MockViolationProvider()
 
     if not settings.http_provider_url:
         raise ValueError("HTTP_PROVIDER_URL is required when PROVIDER_MODE=http.")
+
+    from src.provider.http_provider import HttpViolationProvider
 
     return HttpViolationProvider(
         base_url=settings.http_provider_url,
