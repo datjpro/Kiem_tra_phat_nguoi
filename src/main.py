@@ -3,6 +3,8 @@ from __future__ import annotations
 import asyncio
 import logging
 
+from telegram import BotCommand
+from telegram.error import TelegramError
 from telegram.ext import Application, CommandHandler
 
 from src.bot.handlers import (
@@ -18,9 +20,28 @@ from src.db import Repository
 from src.provider import build_provider
 from src.services.monitor import run_monitor_cycle
 
+BOT_COMMANDS = [
+    BotCommand("start", "Bat dau va xem huong dan"),
+    BotCommand("help", "Xem danh sach lenh"),
+    BotCommand("check", "Kiem tra phat nguoi ngay"),
+    BotCommand("track", "Bat theo doi bien so"),
+    BotCommand("untrack", "Tat theo doi bien so"),
+    BotCommand("list", "Xem bien so dang theo doi"),
+]
+
 
 async def monitor_job(context) -> None:
     await run_monitor_cycle(context.application)
+
+
+async def register_bot_commands(application: Application) -> None:
+    logger = logging.getLogger(__name__)
+    try:
+        await application.bot.set_my_commands(BOT_COMMANDS)
+    except TelegramError:
+        logger.exception("Khong the dang ky command menu voi Telegram.")
+        return
+    logger.info("Da dang ky %d command voi Telegram.", len(BOT_COMMANDS))
 
 
 def main() -> None:
@@ -33,7 +54,12 @@ def main() -> None:
     repo = Repository(settings.sqlite_path)
     provider = build_provider(settings)
 
-    application = Application.builder().token(settings.telegram_bot_token).build()
+    application = (
+        Application.builder()
+        .token(settings.telegram_bot_token)
+        .post_init(register_bot_commands)
+        .build()
+    )
     application.bot_data["repo"] = repo
     application.bot_data["provider"] = provider
 

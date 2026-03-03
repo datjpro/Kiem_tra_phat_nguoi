@@ -54,6 +54,7 @@ python -m src.main
 
 ## 4) Lenh Telegram
 
+- Bot tu dong dang ky command menu (`setMyCommands`) khi khoi dong, nen khi go `/` se thay danh sach lenh.
 - `/start`
 - `/help`
 - `/check <bien_so> <oto|xemay>`
