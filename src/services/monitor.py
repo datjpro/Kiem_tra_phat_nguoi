@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import logging
 
@@ -77,13 +78,28 @@ async def check_single(
 async def run_monitor_cycle(application: Application) -> None:
     repo: Repository = application.bot_data["repo"]
     provider: ViolationProvider = application.bot_data["provider"]
+    timeout_seconds = int(application.bot_data.get("request_timeout_seconds", 20))
+    monitor_lock: asyncio.Lock = application.bot_data.setdefault(
+        "monitor_lock", asyncio.Lock()
+    )
 
-    subscriptions = repo.list_all_subscriptions()
-    if not subscriptions:
+    if monitor_lock.locked():
+        logger.warning("Bo qua monitor cycle vi lan truoc van dang chay.")
         return
 
-    for item in subscriptions:
-        await _check_subscription(application=application, repo=repo, provider=provider, item=item)
+    async with monitor_lock:
+        subscriptions = repo.list_all_subscriptions()
+        if not subscriptions:
+            return
+
+        for item in subscriptions:
+            await _check_subscription(
+                application=application,
+                repo=repo,
+                provider=provider,
+                item=item,
+                timeout_seconds=timeout_seconds,
+            )
 
 
 async def _check_subscription(
@@ -91,17 +107,31 @@ async def _check_subscription(
     repo: Repository,
     provider: ViolationProvider,
     item: Subscription,
+    timeout_seconds: int,
 ) -> None:
     try:
-        result = await check_single(provider, item.plate, item.vehicle_type)
+        result = await asyncio.wait_for(
+            check_single(provider, item.plate, item.vehicle_type),
+            timeout=max(5, timeout_seconds),
+        )
         fingerprint = build_fingerprint(result.violations)
 
         if item.last_fingerprint and item.last_fingerprint != fingerprint:
             text = "Canh bao: Co thay doi thong tin phat nguoi.\n\n" + format_query_result(
                 result
             )
-            await application.bot.send_message(chat_id=item.chat_id, text=text)
+            await asyncio.wait_for(
+                application.bot.send_message(chat_id=item.chat_id, text=text),
+                timeout=max(10, timeout_seconds),
+            )
         repo.update_fingerprint(item.row_id, fingerprint)
+    except asyncio.TimeoutError:
+        logger.warning(
+            "Monitor timeout for %s/%s (chat_id=%s).",
+            item.plate,
+            item.vehicle_type.value,
+            item.chat_id,
+        )
     except TelegramError as exc:
         logger.warning("Telegram send failed for chat_id=%s: %s", item.chat_id, exc)
     except Exception as exc:  # pragma: no cover - runtime guard

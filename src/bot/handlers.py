@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import logging
+
 from telegram import Update
 from telegram.ext import ContextTypes
 
@@ -8,6 +10,8 @@ from src.models import VehicleType
 from src.provider.base import ViolationProvider
 from src.services.monitor import check_single, format_query_result
 from src.services.plate import normalize_plate, parse_vehicle_type, validate_plate
+
+logger = logging.getLogger(__name__)
 
 HELP_TEXT = (
     "Lenh ho tro:\n"
@@ -39,15 +43,25 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
 
 async def check_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     provider: ViolationProvider = context.application.bot_data["provider"]
+    message = update.effective_message
+    if message is None:
+        return
+
     try:
         plate, vehicle_type = _parse_check_args(context.args)
     except ValueError as exc:
-        await update.message.reply_text(str(exc))
+        await message.reply_text(str(exc))
         return
 
-    await update.message.reply_text("Dang kiem tra, vui long cho...")
-    result = await check_single(provider, plate, vehicle_type)
-    await update.message.reply_text(format_query_result(result))
+    await message.reply_text("Dang kiem tra, vui long cho...")
+    try:
+        result = await check_single(provider, plate, vehicle_type)
+    except Exception as exc:  # pragma: no cover - runtime guard.
+        logger.exception("Check command failed for %s/%s: %s", plate, vehicle_type.value, exc)
+        await message.reply_text("Khong the kiem tra luc nay. Ban vui long thu lai sau.")
+        return
+
+    await message.reply_text(format_query_result(result))
 
 
 async def track_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
